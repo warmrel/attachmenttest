@@ -196,52 +196,6 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 .note-card-icon { color: #a85d6f; flex-shrink: 0; }
 
-/* 닉네임 입력 카드 */
-.nickname-card {
-  background: rgba(255, 255, 255, 0.85);
-  border: 1px solid rgba(168, 93, 111, 0.25);
-  box-shadow: 0 8px 32px rgba(168, 93, 111, 0.1);
-  border-radius: 24px;
-  padding: 24px;
-  margin-bottom: 20px;
-}
-.nickname-label {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  color: #3a2530;
-  margin-bottom: 12px;
-  letter-spacing: 0.02em;
-}
-.nickname-input {
-  width: 100%;
-  padding: 14px 16px;
-  font-family: inherit;
-  font-size: 16px;
-  color: #2a1820;
-  background: white;
-  border: 1.5px solid rgba(168, 93, 111, 0.3);
-  border-radius: 14px;
-  outline: none;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  -webkit-appearance: none;
-  appearance: none;
-}
-.nickname-input:focus {
-  border-color: #a85d6f;
-  box-shadow: 0 0 0 3px rgba(168, 93, 111, 0.15);
-}
-.nickname-input::placeholder {
-  color: #b89aa3;
-  font-weight: 300;
-}
-.nickname-hint {
-  font-size: 11px;
-  color: #8a6a75;
-  margin-top: 10px;
-  font-weight: 300;
-}
-
 .btn-primary {
   width: 100%;
   padding: 18px;
@@ -1184,63 +1138,11 @@ function classifyScore(total) {
 }
 
 // ============================================================
-// Google Sheets 전송
-// ============================================================
-// ⚠️ 아래 SHEETS_WEBHOOK_URL을 본인의 Apps Script 웹앱 URL로 교체하세요.
-// 설정 방법은 README 또는 안내 문서를 참고하세요.
-const SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwDFDIP1_pvPtY-ju-vnkzzTL_p2SG6EBcBESMOOLSuNdDGbeo8Kcv30EQlb30aNE9zTw/exec";
-
-async function sendToSheet(nickname, answers, scores) {
-  // 미설정 상태면 조용히 스킵 (로컬 테스트용)
-  if (!SHEETS_WEBHOOK_URL || SHEETS_WEBHOOK_URL.includes("YOUR_APPS_SCRIPT")) {
-    console.log("Sheets 웹훅 미설정 — 전송 건너뜀");
-    return;
-  }
-
-  // 응답을 정렬된 배열로 변환 (A-0, A-1, ..., B-0, ..., C-10)
-  const orderedAnswers = [];
-  ["A", "B", "C"].forEach((g) => {
-    GROUPS[g].questions.forEach((_, i) => {
-      orderedAnswers.push(answers[`${g}-${i}`] ?? "");
-    });
-  });
-
-  // 최고점 유형 판정
-  const ranked = Object.entries(scores)
-    .map(([k, v]) => ({ key: k, total: v, type: GROUPS[k].type }))
-    .sort((a, b) => b.total - a.total);
-  const topScore = ranked[0].total;
-  const topTypes = ranked.filter((r) => r.total === topScore);
-  const resultType = topTypes.map((t) => t.type).join(" + ");
-
-  const payload = {
-    nickname: nickname.trim(),
-    timestamp: new Date().toISOString(),
-    scoreA: scores.A,
-    scoreB: scores.B,
-    scoreC: scores.C,
-    resultType,
-    answers: orderedAnswers, // [3, 2, 1, ...] 33개
-  };
-
-  // Apps Script로 POST 전송
-  // mode: 'no-cors'를 쓰면 응답을 못 읽지만 전송은 됨 (CORS 우회)
-  await fetch(SHEETS_WEBHOOK_URL, {
-    method: "POST",
-    mode: "no-cors",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(payload),
-  });
-}
-
-// ============================================================
 // 메인
 // ============================================================
 function App() {
   const [stage, setStage] = useState("intro");
   const [answers, setAnswers] = useState({});
-  const [nickname, setNickname] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
   const allQuestions = [];
   Object.values(GROUPS).forEach((g) => {
@@ -1268,15 +1170,11 @@ function App() {
   }
 
   function startTest() {
-    if (!nickname.trim()) {
-      alert("닉네임을 입력해주세요.");
-      return;
-    }
     setStage("test");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function submitTest() {
+  function submitTest() {
     if (answeredCount < totalCount) {
       const firstUnanswered = allQuestions.findIndex(
         (q) => answers[`${q.groupKey}-${q.qIdx}`] === undefined
@@ -1289,39 +1187,19 @@ function App() {
       }
       return;
     }
-
-    // 결과 화면으로 먼저 전환 (사용자 경험 우선)
     setStage("result");
     window.scrollTo({ top: 0, behavior: "smooth" });
-
-    // 백그라운드에서 시트로 전송 (실패해도 사용자에게는 영향 없음)
-    setSubmitting(true);
-    try {
-      await sendToSheet(nickname, answers, calculateScores());
-    } catch (e) {
-      // 전송 실패는 콘솔에만 기록 (관리자가 나중에 확인)
-      console.warn("Sheet 전송 실패:", e);
-    } finally {
-      setSubmitting(false);
-    }
   }
 
   function reset() {
     setAnswers({});
-    setNickname("");
     setStage("intro");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   return (
     <div className="app">
-      {stage === "intro" && (
-        <IntroView
-          nickname={nickname}
-          setNickname={setNickname}
-          onStart={startTest}
-        />
-      )}
+      {stage === "intro" && <IntroView onStart={startTest} />}
       {stage === "test" && (
         <TestView
           allQuestions={allQuestions}
@@ -1343,13 +1221,7 @@ function App() {
 // ============================================================
 // 인트로
 // ============================================================
-function IntroView({ nickname, setNickname, onStart }) {
-  function handleKeyDown(e) {
-    if (e.key === "Enter" && nickname.trim()) {
-      onStart();
-    }
-  }
-
+function IntroView({ onStart }) {
   return (
     <div className="intro">
       <div className="intro-header">
@@ -1378,37 +1250,13 @@ function IntroView({ nickname, setNickname, onStart }) {
         </div>
       </div>
 
-      <div className="nickname-card">
-        <label className="nickname-label" htmlFor="nickname-input">
-          닉네임을 입력해주세요
-        </label>
-        <input
-          id="nickname-input"
-          type="text"
-          className="nickname-input"
-          placeholder="예: 체이스"
-          value={nickname}
-          onChange={(e) => setNickname(e.target.value.slice(0, 20))}
-          onKeyDown={handleKeyDown}
-          maxLength={20}
-          autoComplete="off"
-        />
-        <p className="nickname-hint">
-          닉네임 외에 개인정보는 수집하지 않습니다.
-        </p>
-      </div>
-
       <div className="note-card">
         <span className="note-card-icon">◆</span>
         <span>총 33문항 · A·B·C 세 그룹별로 점수를 합산하여 애착 유형(회피형/안정형/불안형)을 판별합니다.</span>
       </div>
 
-      <button
-        className="btn-primary"
-        onClick={onStart}
-        disabled={!nickname.trim()}
-      >
-        {nickname.trim() ? "테스트 시작하기 →" : "닉네임을 입력해주세요"}
+      <button className="btn-primary" onClick={onStart}>
+        테스트 시작하기 →
       </button>
     </div>
   );
